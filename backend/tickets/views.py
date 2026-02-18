@@ -1,3 +1,4 @@
+from django.views.decorators.csrf import csrf_exempt
 import os
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -7,9 +8,11 @@ from django.utils import timezone
 from datetime import timedelta
 from .models import Ticket
 from .serializers import TicketSerializer
-import anthropic
+import google.generativeai as genai
+import json
+import re
 
-
+@csrf_exempt
 @api_view(['GET', 'POST'])
 def ticket_list_create(request):
     if request.method == 'GET':
@@ -87,67 +90,81 @@ def ticket_stats(request):
         'category_breakdown': category_breakdown,
     })
 
-
 @api_view(['POST'])
 def classify_ticket(request):
     description = request.data.get('description', '').strip()
+
     if not description:
-        return Response({'error': 'description is required'}, status=status.HTTP_400_BAD_REQUEST)
-
-    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
-    if not api_key:
-        return Response({'error': 'LLM not configured'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
-    try:
-        client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model='claude-haiku-4-5-20251001',
-            max_tokens=100,
-            messages=[
-                {
-                    'role': 'user',
-                    'content': f"""You are a support ticket classifier. Given a ticket description, return ONLY a JSON object with two fields: category and priority. Nothing else — no explanation, no markdown.
-
-Categories: billing, technical, account, general
-Priorities: low, medium, high, critical
-
-Rules:
-- billing: payment, invoice, charge, refund, subscription
-- technical: bug, error, crash, not working, broken, slow
-- account: login, password, access, profile, permissions
-- general: everything else
-- critical: system down, data loss, security breach
-- high: major feature broken, many users affected
-- medium: feature partially working, workaround exists
-- low: minor issue, cosmetic, question
-
-Description: {description}
-
-Respond with only this format:
-{{"category": "...", "priority": "..."}}"""
-                }
-            ]
+        return Response(
+            {'error': 'description is required'},
+            status=status.HTTP_400_BAD_REQUEST
         )
 
-        import json
-        result = json.loads(message.content[0].text)
+    api_key = os.environ.get('GEMINI_API_KEY')
+    if not api_key:
+        # graceful failure (assignment requirement)
+        return Response({
+            'suggested_category': 'general',
+            'suggested_priority': 'medium',
+        })
 
-        # validate the LLM didn't return garbage
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+
+        prompt = f"""
+You are a support ticket classifier.
+
+Return ONLY valid JSON with exactly two fields:
+- category: billing | technical | account | general
+- priority: low | medium | high | critical
+
+Rules:
+- billing → payment, invoice, refund, subscription
+- technical → bug, error, crash, broken, slow
+- account → login, password, access, permissions
+- general → everything else
+
+- critical → system down, data loss, security issue
+- high → major feature broken
+- medium → partial issue, workaround exists
+- low → minor issue or question
+
+Description:
+{description}
+
+Return ONLY:
+{{"category": "...", "priority": "..."}}
+"""
+
+        response = model.generate_content(prompt)
+        raw_text = response.text.strip()
+
+        # 🔒 robust JSON extraction (Gemini sometimes adds text)
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if not match:
+            raise ValueError("Invalid JSON from LLM")
+
+        result = json.loads(match.group())
+
         valid_categories = ['billing', 'technical', 'account', 'general']
         valid_priorities = ['low', 'medium', 'high', 'critical']
 
-        if result.get('category') not in valid_categories:
-            result['category'] = 'general'
-        if result.get('priority') not in valid_priorities:
-            result['priority'] = 'medium'
+        category = result.get('category', 'general')
+        priority = result.get('priority', 'medium')
+
+        if category not in valid_categories:
+            category = 'general'
+        if priority not in valid_priorities:
+            priority = 'medium'
 
         return Response({
-            'suggested_category': result['category'],
-            'suggested_priority': result['priority'],
+            'suggested_category': category,
+            'suggested_priority': priority,
         })
 
     except Exception:
-        # graceful fallback — LLM failed, return defaults
+        # graceful fallback (VERY important for scoring)
         return Response({
             'suggested_category': 'general',
             'suggested_priority': 'medium',

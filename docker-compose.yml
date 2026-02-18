@@ -13,6 +13,9 @@ services:
 
   backend:
     build: ./backend
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     ports:
       - "8000:8000"
     environment:
@@ -21,7 +24,7 @@ services:
       POSTGRES_PASSWORD: tickets_pass
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     depends_on:
       - db
 
