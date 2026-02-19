@@ -86,7 +86,8 @@ DATABASES = {
         'HOST': os.environ.get('POSTGRES_HOST', 'db'),
         'PORT': os.environ.get('POSTGRES_PORT', '5432'),
     }
-}
+} 
+
 
 
 # Password validation
@@ -111,10 +112,10 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [],
     'DEFAULT_PERMISSION_CLASSES': [],
 }
-
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
-
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = 'UTC'
@@ -130,7 +131,6 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 CORS_ALLOW_ALL_ORIGINS = True  # fine for dev
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 
 CORS_ALLOW_CREDENTIALS = False
 

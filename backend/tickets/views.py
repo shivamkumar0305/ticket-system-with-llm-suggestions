@@ -8,7 +8,7 @@ from django.utils import timezone
 from datetime import timedelta
 from .models import Ticket
 from .serializers import TicketSerializer
-import google.generativeai as genai
+import requests
 import json
 import re
 
@@ -93,6 +93,10 @@ def ticket_stats(request):
 @api_view(['POST'])
 def classify_ticket(request):
     description = request.data.get('description', '').strip()
+    
+    
+    api_key = os.environ.get('OPENAI_API_KEY')
+    print(f"API KEY EXISTS: {bool(api_key)}")
 
     if not description:
         return Response(
@@ -100,18 +104,15 @@ def classify_ticket(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    api_key = os.environ.get('GEMINI_API_KEY')
+    api_key = os.environ.get('OPENAI_API_KEY')
+
     if not api_key:
-        # graceful failure (assignment requirement)
         return Response({
             'suggested_category': 'general',
             'suggested_priority': 'medium',
         })
 
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-
         prompt = f"""
 You are a support ticket classifier.
 
@@ -124,7 +125,6 @@ Rules:
 - technical → bug, error, crash, broken, slow
 - account → login, password, access, permissions
 - general → everything else
-
 - critical → system down, data loss, security issue
 - high → major feature broken
 - medium → partial issue, workaround exists
@@ -137,10 +137,26 @@ Return ONLY:
 {{"category": "...", "priority": "..."}}
 """
 
-        response = model.generate_content(prompt)
-        raw_text = response.text.strip()
+        url = "https://api.openai.com/v1/chat/completions"
 
-        # 🔒 robust JSON extraction (Gemini sometimes adds text)
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 100
+        }
+
+        response = requests.post(
+            url,
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            timeout=10
+        )
+        
+        raw_text = response.json()['choices'][0]['message']['content'].strip()
+
         match = re.search(r'\{.*\}', raw_text, re.DOTALL)
         if not match:
             raise ValueError("Invalid JSON from LLM")
@@ -163,9 +179,9 @@ Return ONLY:
             'suggested_priority': priority,
         })
 
-    except Exception:
-        # graceful fallback (VERY important for scoring)
+    except Exception as e:
+        print(f"CLASSIFY ERROR: {e}")  # this will show in Docker logs
         return Response({
-            'suggested_category': 'general',
-            'suggested_priority': 'medium',
+        'suggested_category': 'general',
+        'suggested_priority': 'medium',
         })

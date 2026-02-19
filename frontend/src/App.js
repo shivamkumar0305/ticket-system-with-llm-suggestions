@@ -33,8 +33,15 @@ function App() {
   };
 
   return (
-    <div style={{ maxWidth: "900px", margin: "0 auto", padding: "20px" }}>
-      <h1>Support Ticket System</h1>
+    <div style={{ maxWidth: "960px", margin: "0 auto", padding: "40px 20px" }}>
+      <div style={{ marginBottom: "32px" }}>
+        <h1 style={{ fontSize: "24px", fontWeight: "600", color: "#1a1a1a" }}>
+          Support Tickets
+        </h1>
+        <p style={{ color: "#6b6b6b", marginTop: "4px" }}>
+          Manage and track support requests
+        </p>
+      </div>
       <StatsDashboard apiUrl={API_URL} refreshTrigger={refreshStats} />
       <TicketForm apiUrl={API_URL} onTicketCreated={onTicketCreated} />
       <TicketList
